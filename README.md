@@ -1,60 +1,70 @@
-# OpenCode MCP Dispatcher
+# opencode-mcp
 
-A small HTTP MCP server that lets Amazon Quick or another MCP host delegate
-coding work to OpenCode without relying on an ACP bridge.
+HTTP MCP server that runs **OpenCode jobs in the background** and gives the host a job id immediately.
 
-The server exposes a durable, asynchronous job API. `coding_task_start` launches
-OpenCode in the background and returns a job id immediately, which keeps each MCP
-tool call short. Clients can poll for status, fetch retained output, attach
-follow-up notes, or cancel the subprocess.
+OpenCode runs are long. MCP tool calls should not be. This dispatcher starts `opencode run`, returns, and lets the client poll for status, output, or cancel.
+
+Works with any MCP host that can call a JSON-RPC HTTP endpoint (Claude Desktop, Cursor, Amazon Q, custom agents).
 
 ## Tools
 
 | Tool | Purpose |
 | --- | --- |
-| `coding_task_start` | Start an OpenCode job asynchronously and return `job_id`. |
-| `coding_task_status` | Return status, metadata, and recent output tail. |
-| `coding_task_result` | Return full retained output and final metadata. |
-| `coding_task_continue` | Record follow-up instructions for the job. |
-| `coding_task_cancel` | Send `SIGTERM` to a running OpenCode process. |
+| `coding_task_start` | Launch `opencode run <prompt>` and return `job_id` |
+| `coding_task_status` | Status, metadata, and an output tail |
+| `coding_task_result` | Full retained output (capped) plus final metadata |
+| `coding_task_continue` | Store a follow-up note on the job (not piped into the running process) |
+| `coding_task_cancel` | `SIGTERM` a running OpenCode process |
 
-## Run locally
+Jobs live in memory for the life of the process. Restarting the server drops them.
+
+## Requirements
+
+- Python 3.11+
+- [OpenCode](https://github.com/sst/opencode) on `PATH`, or pass `--opencode-bin`
+
+## Install
+
+```bash
+git clone https://github.com/rlwillen0121/opencode-mcp.git
+cd opencode-mcp
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e ".[dev]"
+```
+
+No extra runtime dependencies. The server is stdlib-only.
+
+## Run
 
 ```bash
 python -m opencode_mcp.server --host 127.0.0.1 --port 8765 --cwd /path/to/repo
 ```
 
-Environment variables:
+or:
 
-- `OPENCODE_BIN`: OpenCode executable name or absolute path. Defaults to
-  `opencode`.
-- `OPENCODE_MCP_HOST`: bind host. Defaults to `127.0.0.1`.
-- `OPENCODE_MCP_PORT`: bind port. Defaults to `8765`.
-- `OPENCODE_MCP_CWD`: default working directory for jobs. Defaults to the
-  process working directory.
-- `OPENCODE_MCP_DEBUG`: when set, enables HTTP request logging.
-
-## Quick / remote MCP shape
-
-Point the MCP client at:
-
-```text
-http://<host>:8765/mcp
+```bash
+opencode-mcp --host 127.0.0.1 --port 8765 --cwd /path/to/repo
 ```
 
-This implementation uses JSON-RPC over HTTP and implements the core methods
-needed by MCP clients:
+MCP endpoint: `http://127.0.0.1:8765/mcp`  
+Health: `GET /health` or `GET /healthz`
 
-- `initialize`
-- `tools/list`
-- `tools/call`
-- `notifications/initialized`
+### Environment
 
-For corporate source code, prefer running this inside an approved environment
-that can clone repositories into isolated worktrees. Avoid exposing a local
-workstation runner through a public tunnel.
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `OPENCODE_BIN` | `opencode` | Binary name or absolute path |
+| `OPENCODE_MCP_HOST` | `127.0.0.1` | Bind address |
+| `OPENCODE_MCP_PORT` | `8765` | Bind port |
+| `OPENCODE_MCP_CWD` | process cwd | Default workdir for jobs |
+| `OPENCODE_MCP_DEBUG` | unset | Log HTTP requests when set |
 
-## Example JSON-RPC calls
+CLI flags override the matching env vars (`--host`, `--port`, `--opencode-bin`, `--cwd`).
+
+## Point an MCP client at it
+
+JSON-RPC over HTTP. Implemented methods: `initialize`, `tools/list`, `tools/call`, `notifications/initialized`.
 
 ```bash
 curl -s http://127.0.0.1:8765/mcp \
@@ -67,3 +77,26 @@ curl -s http://127.0.0.1:8765/mcp \
   -H 'content-type: application/json' \
   -d '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"coding_task_start","arguments":{"prompt":"Fix the failing tests","cwd":"/path/to/repo"}}}'
 ```
+
+Poll with `coding_task_status` / `coding_task_result` using the returned `job_id`.
+
+## Security
+
+There is **no authentication**. Bind to loopback.
+
+- Default host is `127.0.0.1`. Do not set `--host 0.0.0.0` unless something else authenticates in front.
+- Do not expose this through a public tunnel. It will run OpenCode against whatever `cwd` the client sends.
+- For anything other than a personal laptop, run it in an isolated worktree or disposable environment.
+
+See [SECURITY.md](SECURITY.md).
+
+## Tests
+
+```bash
+pip install pytest
+pytest
+```
+
+## License
+
+MIT. See [LICENSE](LICENSE).

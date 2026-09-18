@@ -9,10 +9,18 @@ description = "Asynchronous MCP dispatcher for OpenCode coding jobs"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
-authors = [{ name = "OpenCode MCP contributors" }]
+authors = [{ name = "Ryan Willen" }]
+keywords = ["mcp", "opencode", "model-context-protocol"]
+urls = { Homepage = "https://github.com/rlwillen0121/opencode-mcp", Issues = "https://github.com/rlwillen0121/opencode-mcp/issues" }
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
 
 [project.scripts]
 opencode-mcp = "opencode_mcp.server:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]
